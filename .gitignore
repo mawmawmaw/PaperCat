@@ -6,3 +6,6 @@ DerivedData/
 .DS_Store
 Tests/scan_interactive
 HPScannerApp/
+*.app/
+AppIcon.iconset/
+AppIcon.icns
