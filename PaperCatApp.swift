@@ -33,6 +33,12 @@ struct PaperCatApp: App {
             ContentView()
                 .environmentObject(viewModel)
                 .frame(minWidth: 900, minHeight: 600)
+                .onAppear {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        NSApp.activate(ignoringOtherApps: true)
+                        NSApp.windows.first?.makeKeyAndOrderFront(nil)
+                    }
+                }
         }
         .commands {
             CommandGroup(after: .newItem) {
