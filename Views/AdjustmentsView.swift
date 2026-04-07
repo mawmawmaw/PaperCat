@@ -16,6 +16,13 @@ struct AdjustmentsView: View {
                     Text("Adjustments")
                         .font(.headline)
                     Spacer()
+                    if viewModel.document.pages.count > 1 {
+                        Button("Apply to All") {
+                            viewModel.applyAdjustmentsToAll()
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.blue)
+                    }
                     Button("Reset") {
                         viewModel.resetAdjustments(for: index)
                     }

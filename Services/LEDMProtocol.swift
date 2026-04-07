@@ -328,8 +328,8 @@ class LEDMProtocol {
     }
 
     private func logToFile(_ message: String) {
-        let logPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("PaperCat.log")
+        let logDir = (getuid() == 0) ? "/tmp" : FileManager.default.homeDirectoryForCurrentUser.path
+        let logPath = URL(fileURLWithPath: logDir).appendingPathComponent("PaperCat.log")
         let line = "[\(Date())] [LEDM] \(message)\n"
         if let data = line.data(using: .utf8),
            let handle = try? FileHandle(forWritingTo: logPath) {

@@ -459,7 +459,8 @@ final class USBTransport: @unchecked Sendable {
     }
 
     static func logUSB(_ message: String) {
-        let logPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("PaperCat.log")
+        let logDir = (getuid() == 0) ? "/tmp" : FileManager.default.homeDirectoryForCurrentUser.path
+        let logPath = URL(fileURLWithPath: logDir).appendingPathComponent("PaperCat.log")
         let line = "[\(Date())] [USB] \(message)\n"
         if let data = line.data(using: .utf8) {
             if FileManager.default.fileExists(atPath: logPath.path) {

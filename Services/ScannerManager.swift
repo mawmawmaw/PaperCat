@@ -120,7 +120,6 @@ class ScannerManager: NSObject, ObservableObject {
         usbQueue.async { [weak self] in
             do {
                 Self.log("Scan request: resolution=\(resolution.rawValue), color=\(colorMode.rawValue), paper=\(paperSize.rawValue)")
-                Self.log("Parity mode active: using CreateScanJob RGB24 @ 300 DPI (Letter)")
 
                 Task { @MainActor in self?.statusMessage = "Preparing scan session..." }
                 try transport.prepareInteractiveSOAPSession()
@@ -224,24 +223,15 @@ class ScannerManager: NSObject, ObservableObject {
 
                 guard let extraction else {
                     if !lastRetrieveResponse.isEmpty {
-                        let failedRawPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("papercat_scan_raw.bin")
+                        let diagDir = (getuid() == 0) ? "/tmp" : FileManager.default.homeDirectoryForCurrentUser.path
+                        let failedRawPath = URL(fileURLWithPath: diagDir).appendingPathComponent("papercat_scan_raw.bin")
                         try? lastRetrieveResponse.write(to: failedRawPath)
                         Self.log("Saved last retrieve response to \(failedRawPath.path)")
                     }
                     throw ScannerError.scanFailed(detail: "RetrieveImage timed out before image payload was available")
                 }
 
-                let imageData = lastRetrieveResponse
-
-                let rawPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("papercat_scan_raw.bin")
-                try? imageData.write(to: rawPath)
-                Self.log("Saved raw data to \(rawPath.path)")
-
                 Self.log("Extracted \(extraction.mimeType): payload=\(extraction.payloadData.count) jpeg=\(extraction.jpegData.count)")
-
-                let payloadPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("papercat_scan_raw_jpeg.bin")
-                try? extraction.payloadData.write(to: payloadPath)
-                Self.log("Saved image payload to \(payloadPath.path)")
 
                 let normalizedData = Self.reencodeJPEG(extraction.jpegData)
                 if normalizedData.count != extraction.jpegData.count {
@@ -251,9 +241,6 @@ class ScannerManager: NSObject, ObservableObject {
                 guard let image = NSImage(data: normalizedData) else {
                     throw ScannerError.imageLoadFailed
                 }
-
-                let savePath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("papercat_scan_test.jpg")
-                try? normalizedData.write(to: savePath)
 
                 Task { @MainActor in
                     guard let self else { return }
@@ -338,7 +325,9 @@ class ScannerManager: NSObject, ObservableObject {
     }
 
     nonisolated private static func log(_ message: String) {
-        let logPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("PaperCat.log")
+        // Use /tmp when running as root (home would be /var/root)
+        let logDir = (getuid() == 0) ? "/tmp" : FileManager.default.homeDirectoryForCurrentUser.path
+        let logPath = URL(fileURLWithPath: logDir).appendingPathComponent("PaperCat.log")
         let line = "[\(Date())] \(message)\n"
         if let data = line.data(using: .utf8) {
             if FileManager.default.fileExists(atPath: logPath.path) {

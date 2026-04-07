@@ -5,47 +5,65 @@ struct ScanPreviewView: View {
     @State private var zoomScale: CGFloat = 1.0
     @State private var showOCRPanel = false
 
+    // Crop state
+    @State private var isCropping = false
+    @State private var cropStart: CGPoint = .zero
+    @State private var cropEnd: CGPoint = .zero
+    @State private var isDraggingCrop = false
+
     var body: some View {
         HSplitView {
-            // Main image preview
             GeometryReader { geometry in
-                ScrollView([.horizontal, .vertical]) {
-                    if let page = viewModel.selectedPage {
-                        Image(nsImage: page.adjustedImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .scaleEffect(zoomScale)
-                            .frame(
-                                width: geometry.size.width * zoomScale,
-                                height: geometry.size.height * zoomScale
-                            )
+                if viewModel.scannerManager.isScanning {
+                    scanningOverlay
+                } else if let page = viewModel.selectedPage {
+                    let imageSize = page.adjustedImage.size
+                    let fitScale = min(
+                        geometry.size.width / imageSize.width,
+                        geometry.size.height / imageSize.height
+                    )
+                    let displayWidth = imageSize.width * fitScale * zoomScale
+                    let displayHeight = imageSize.height * fitScale * zoomScale
+
+                    ScrollView([.horizontal, .vertical]) {
+                        ZStack(alignment: .topLeading) {
+                            Image(nsImage: page.adjustedImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: displayWidth, height: displayHeight)
+
+                            if isCropping && isDraggingCrop {
+                                cropOverlay
+                            }
+                        }
+                        .frame(width: displayWidth, height: displayHeight)
+                        .gesture(isCropping ? cropGesture(fitScale: fitScale) : nil)
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        zoomControls
+                            .padding(12)
+                    }
+                    .overlay(alignment: .bottom) {
+                        if isCropping {
+                            cropToolbar(fitScale: fitScale, imageSize: imageSize)
+                                .padding(.bottom, 12)
+                        }
                     }
                 }
-                .background(Color(nsColor: .controlBackgroundColor))
             }
-            .overlay(alignment: .bottomTrailing) {
-                zoomControls
-                    .padding(12)
-            }
-            .overlay(alignment: .top) {
-                if viewModel.scannerManager.isScanning {
-                    ProgressView("Scanning...")
-                        .padding()
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                        .padding(.top, 20)
-                }
-                if viewModel.isProcessingOCR {
-                    ProgressView("Running OCR...")
-                        .padding()
-                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
-                        .padding(.top, 20)
-                }
-            }
+            .background(Color(nsColor: .controlBackgroundColor))
 
-            // OCR panel (shown on demand)
             if showOCRPanel, let page = viewModel.selectedPage {
                 OCRResultView(text: page.ocrText ?? "No OCR text. Right-click a page and select 'Run OCR'.")
                     .frame(minWidth: 250, maxWidth: 350)
+            }
+        }
+        .overlay(alignment: .top) {
+            if viewModel.isProcessingOCR {
+                ProgressView("Running OCR...")
+                    .padding()
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .padding(.top, 20)
             }
         }
         .toolbar {
@@ -65,20 +83,109 @@ struct ScanPreviewView: View {
                         Label("Text Panel", systemImage: "sidebar.trailing")
                     }
 
-                    Button(action: {
-                        if let index = viewModel.selectedPageIndex {
-                            viewModel.autoCrop(pageIndex: index)
-                        }
-                    }) {
-                        Label("Auto-Crop", systemImage: "crop")
-                    }
-
-                    Button(action: { viewModel.printCurrentPage() }) {
-                        Label("Print Page", systemImage: "printer")
+                    Toggle(isOn: $isCropping) {
+                        Label("Crop", systemImage: "crop")
                     }
                 }
             }
         }
+        .onChange(of: viewModel.selectedPageIndex) {
+            isCropping = false
+            isDraggingCrop = false
+        }
+    }
+
+    // MARK: - Crop
+
+    private func cropGesture(fitScale: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                if !isDraggingCrop {
+                    cropStart = value.startLocation
+                    isDraggingCrop = true
+                }
+                cropEnd = value.location
+            }
+            .onEnded { _ in }
+    }
+
+    private var cropOverlay: some View {
+        let rect = normalizedCropRect
+        return Rectangle()
+            .strokeBorder(Color.accentColor, lineWidth: 2)
+            .background(Color.accentColor.opacity(0.1))
+            .frame(width: rect.width, height: rect.height)
+            .offset(x: rect.origin.x, y: rect.origin.y)
+    }
+
+    private var normalizedCropRect: CGRect {
+        let x = min(cropStart.x, cropEnd.x)
+        let y = min(cropStart.y, cropEnd.y)
+        let w = abs(cropEnd.x - cropStart.x)
+        let h = abs(cropEnd.y - cropStart.y)
+        return CGRect(x: x, y: y, width: w, height: h)
+    }
+
+    private func cropToolbar(fitScale: CGFloat, imageSize: CGSize) -> some View {
+        HStack(spacing: 12) {
+            if isDraggingCrop {
+                Button("Apply Crop") {
+                    applyCrop(fitScale: fitScale, imageSize: imageSize)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Clear") {
+                    isDraggingCrop = false
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Text("Drag to select crop area")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button("Cancel") {
+                isCropping = false
+                isDraggingCrop = false
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func applyCrop(fitScale: CGFloat, imageSize: CGSize) {
+        guard let index = viewModel.selectedPageIndex else { return }
+        let displayRect = normalizedCropRect
+        let scale = fitScale * zoomScale
+
+        // Convert display coordinates to image pixel coordinates
+        let imageRect = CGRect(
+            x: displayRect.origin.x / scale,
+            y: displayRect.origin.y / scale,
+            width: displayRect.width / scale,
+            height: displayRect.height / scale
+        )
+
+        viewModel.cropPage(at: index, to: imageRect)
+        isCropping = false
+        isDraggingCrop = false
+    }
+
+    // MARK: - Subviews
+
+    private var scanningOverlay: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.5)
+            Text("Scanning...")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+            Text(viewModel.scannerManager.statusMessage)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var zoomControls: some View {

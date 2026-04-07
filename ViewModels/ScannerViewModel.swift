@@ -9,15 +9,17 @@ class ScannerViewModel: ObservableObject {
     @Published var selectedPageIndex: Int?
     @Published var isProcessingOCR = false
     @Published var showExportPanel = false
-
     let scannerManager = ScannerManager()
-    private var cancellable: AnyCancellable?
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
-        // Forward ScannerManager's changes to trigger SwiftUI updates
-        cancellable = scannerManager.objectWillChange.sink { [weak self] _ in
+        scannerManager.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
-        }
+        }.store(in: &cancellables)
+
+        document.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }.store(in: &cancellables)
     }
 
     var selectedPage: ScannedPage? {
@@ -98,6 +100,7 @@ class ScannerViewModel: ObservableObject {
             sharpness: page.sharpness
         ) {
             document.pages[pageIndex].adjustedImage = adjusted
+            document.objectWillChange.send()
         }
     }
 
@@ -107,17 +110,38 @@ class ScannerViewModel: ObservableObject {
         document.pages[pageIndex].contrast = 1.0
         document.pages[pageIndex].sharpness = 0
         document.pages[pageIndex].adjustedImage = document.pages[pageIndex].originalImage
+        document.objectWillChange.send()
     }
 
-    func autoCrop(pageIndex: Int) {
-        guard document.pages.indices.contains(pageIndex) else { return }
+    func applyAdjustmentsToAll() {
+        guard let index = selectedPageIndex, document.pages.indices.contains(index) else { return }
+        let source = document.pages[index]
 
-        Task {
-            if let cropped = await ImageProcessor.autoCrop(image: document.pages[pageIndex].adjustedImage) {
-                document.pages[pageIndex].adjustedImage = cropped
-            } else {
-                scannerManager.errorMessage = "Could not detect document edges for auto-crop."
+        for i in document.pages.indices {
+            document.pages[i].brightness = source.brightness
+            document.pages[i].contrast = source.contrast
+            document.pages[i].sharpness = source.sharpness
+
+            if let adjusted = ImageProcessor.applyAdjustments(
+                to: document.pages[i].originalImage,
+                brightness: source.brightness,
+                contrast: source.contrast,
+                sharpness: source.sharpness
+            ) {
+                document.pages[i].adjustedImage = adjusted
             }
+        }
+        document.objectWillChange.send()
+    }
+
+    // MARK: - Crop
+
+    func cropPage(at index: Int, to rect: CGRect) {
+        guard document.pages.indices.contains(index) else { return }
+        if let cropped = ImageProcessor.crop(image: document.pages[index].adjustedImage, to: rect) {
+            document.pages[index].adjustedImage = cropped
+            document.pages[index].originalImage = cropped
+            document.objectWillChange.send()
         }
     }
 
@@ -152,42 +176,9 @@ class ScannerViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Printing
+    // MARK: - Printing (placeholder — USB printing not yet implemented)
 
     func printDocument() {
-        guard !document.pages.isEmpty else { return }
-
-        // Build a composite image view for all pages
-        guard let firstPage = document.pages.first else { return }
-        let imageView = NSImageView(frame: NSRect(origin: .zero, size: firstPage.adjustedImage.size))
-        imageView.image = firstPage.adjustedImage
-        imageView.imageScaling = .scaleProportionallyDown
-
-        let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
-        printInfo.horizontalPagination = .fit
-        printInfo.verticalPagination = .fit
-        printInfo.isHorizontallyCentered = true
-        printInfo.isVerticallyCentered = true
-
-        let printOp = NSPrintOperation(view: imageView, printInfo: printInfo)
-        printOp.showsPrintPanel = true
-        printOp.showsProgressPanel = true
-        printOp.run()
-    }
-
-    func printCurrentPage() {
-        guard let page = selectedPage else { return }
-
-        let imageView = NSImageView(frame: NSRect(origin: .zero, size: page.adjustedImage.size))
-        imageView.image = page.adjustedImage
-        imageView.imageScaling = .scaleProportionallyDown
-
-        let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
-        printInfo.horizontalPagination = .fit
-        printInfo.verticalPagination = .fit
-
-        let printOp = NSPrintOperation(view: imageView, printInfo: printInfo)
-        printOp.showsPrintPanel = true
-        printOp.run()
+        scannerManager.errorMessage = "Printing not yet available"
     }
 }

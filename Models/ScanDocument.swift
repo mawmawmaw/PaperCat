@@ -3,7 +3,7 @@ import Foundation
 
 struct ScannedPage: Identifiable {
     let id = UUID()
-    let originalImage: NSImage
+    var originalImage: NSImage
     var adjustedImage: NSImage
     var ocrText: String?
     let scannedAt: Date

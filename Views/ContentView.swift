@@ -8,7 +8,9 @@ struct ContentView: View {
             PageSidebarView()
                 .frame(minWidth: 180)
         } detail: {
-            if viewModel.selectedPage != nil {
+            if viewModel.scannerManager.isScanning && viewModel.document.pages.isEmpty {
+                scanningState
+            } else if viewModel.selectedPage != nil {
                 VStack(spacing: 0) {
                     ScanPreviewView()
                     Divider()
@@ -28,11 +30,6 @@ struct ContentView: View {
                 }
                 .disabled(!viewModel.scannerManager.scannerIsReady || viewModel.scannerManager.isScanning)
 
-                Button(action: { viewModel.printDocument() }) {
-                    Label("Print", systemImage: "printer")
-                }
-                .disabled(viewModel.document.pages.isEmpty)
-
                 Menu {
                     Button("Export All as PDF...") { showExportPDFPanel() }
                     Button("Export Current Page...") { showExportPagePanel() }
@@ -42,7 +39,7 @@ struct ContentView: View {
                 }
                 .disabled(viewModel.document.pages.isEmpty)
 
-                settingsMenu
+                // settingsMenu — disabled until dynamic scan parameters are tested
             }
         }
         .sheet(isPresented: $viewModel.showExportPanel) {
@@ -52,6 +49,20 @@ struct ContentView: View {
     }
 
     // MARK: - Subviews
+
+    private var scanningState: some View {
+        VStack(spacing: 16) {
+            ProgressView()
+                .scaleEffect(1.5)
+            Text("Scanning...")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text(viewModel.scannerManager.statusMessage)
+                .font(.callout)
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
     private var emptyState: some View {
         VStack(spacing: 16) {

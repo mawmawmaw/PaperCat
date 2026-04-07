@@ -16,21 +16,39 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 # Copy the real binary as PaperCat-bin
 cp "$SCRIPT_DIR/.build/release/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME-bin"
 
-# Create a launcher script that requests admin privileges for USB access
-cat > "$APP_BUNDLE/Contents/MacOS/$APP_NAME" << 'LAUNCHER'
-#!/bin/bash
-DIR="$(cd "$(dirname "$0")" && pwd)"
-BIN="$DIR/PaperCat-bin"
+# Compile a small Swift launcher that hides from the dock before elevating.
+# This prevents the duplicate dock icon.
+cat > /tmp/PaperCatLauncher.swift << 'SWIFT'
+import AppKit
+import Foundation
 
-# If already root, just run the binary
-if [ "$(id -u)" -eq 0 ]; then
-    exec "$BIN"
-fi
+// Hide this process from the dock immediately
+NSApplication.shared.setActivationPolicy(.accessory)
 
-# Request admin privileges via macOS password dialog
-osascript -e "do shell script quoted form of \"$BIN\" with administrator privileges" &
-LAUNCHER
-chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+let dir = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().path
+let bin = "\(dir)/PaperCat-bin"
+let pid = ProcessInfo.processInfo.processIdentifier
+
+// Build the osascript command to launch PaperCat-bin as root
+let shellCmd = "PAPERCAT_LAUNCHER_PID=\(pid) exec '\(bin)'"
+let task = Process()
+task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+task.arguments = ["-e", "do shell script \"\(shellCmd)\" with administrator privileges"]
+
+do {
+    try task.run()
+    task.waitUntilExit()
+} catch {
+    fputs("Failed to launch: \(error)\n", stderr)
+}
+
+exit(task.terminationStatus)
+SWIFT
+
+echo "Compiling launcher..."
+swiftc -O -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" /tmp/PaperCatLauncher.swift \
+    -framework AppKit -framework Foundation 2>&1
+rm /tmp/PaperCatLauncher.swift
 
 # Copy Info.plist
 cp "$SCRIPT_DIR/Info.plist" "$APP_BUNDLE/Contents/"

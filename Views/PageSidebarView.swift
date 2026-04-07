@@ -11,7 +11,6 @@ struct PageSidebarView: View {
                         .tag(index)
                         .contextMenu {
                             Button("Run OCR") { viewModel.runOCR(on: index) }
-                            Button("Auto-Crop") { viewModel.autoCrop(pageIndex: index) }
                             Divider()
                             Button("Delete", role: .destructive) { viewModel.deletePage(at: index) }
                         }

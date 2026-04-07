@@ -4,6 +4,23 @@ import SwiftUI
 struct PaperCatApp: App {
     @StateObject private var viewModel = ScannerViewModel()
 
+    init() {
+        // When launched via the privilege-escalation launcher, monitor the launcher
+        // process so that Force Quit also terminates this root process.
+        if let pidStr = ProcessInfo.processInfo.environment["PAPERCAT_LAUNCHER_PID"],
+           let launcherPID = Int32(pidStr) {
+            DispatchQueue.global(qos: .utility).async {
+                while true {
+                    Thread.sleep(forTimeInterval: 1.0)
+                    if kill(launcherPID, 0) != 0 {
+                        DispatchQueue.main.async { NSApp.terminate(nil) }
+                        break
+                    }
+                }
+            }
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()

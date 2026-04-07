@@ -64,7 +64,7 @@ enum ExportFormat: String, CaseIterable, Identifiable {
 }
 
 struct ScanSettings {
-    var colorMode: ScanColorMode = .grayscale
+    var colorMode: ScanColorMode = .color
     var resolution: ScanResolution = .dpi300
     var paperSize: PaperSize = .letter
     var exportFormat: ExportFormat = .pdf
