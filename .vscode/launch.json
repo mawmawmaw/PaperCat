@@ -1,0 +1,24 @@
+{
+	"configurations": [
+		{
+			"type": "swift",
+			"request": "launch",
+			"args": [],
+			"cwd": "${workspaceFolder}",
+			"name": "Debug PaperCat",
+			"target": "PaperCat",
+			"configuration": "debug",
+			"preLaunchTask": "swift: Build Debug PaperCat"
+		},
+		{
+			"type": "swift",
+			"request": "launch",
+			"args": [],
+			"cwd": "${workspaceFolder}",
+			"name": "Release PaperCat",
+			"target": "PaperCat",
+			"configuration": "release",
+			"preLaunchTask": "swift: Build Release PaperCat"
+		}
+	]
+}
