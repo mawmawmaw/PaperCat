@@ -155,19 +155,32 @@ struct ScanPreviewView: View {
     }
 
     private func applyCrop(fitScale: CGFloat, imageSize: CGSize) {
-        guard let index = viewModel.selectedPageIndex else { return }
-        let displayRect = normalizedCropRect
-        let scale = fitScale * zoomScale
+        guard let index = viewModel.selectedPageIndex,
+              let page = viewModel.selectedPage,
+              let cgImage = page.adjustedImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return }
 
-        // Convert display coordinates to image pixel coordinates
-        let imageRect = CGRect(
-            x: displayRect.origin.x / scale,
-            y: displayRect.origin.y / scale,
-            width: displayRect.width / scale,
-            height: displayRect.height / scale
+        let displayRect = normalizedCropRect
+        let displayScale = fitScale * zoomScale
+
+        // Convert display coords to NSImage point coords
+        let pointX = displayRect.origin.x / displayScale
+        let pointY = displayRect.origin.y / displayScale
+        let pointW = displayRect.width / displayScale
+        let pointH = displayRect.height / displayScale
+
+        // Convert NSImage points to CGImage pixels
+        let pixelScaleX = CGFloat(cgImage.width) / imageSize.width
+        let pixelScaleY = CGFloat(cgImage.height) / imageSize.height
+
+        let pixelRect = CGRect(
+            x: pointX * pixelScaleX,
+            y: pointY * pixelScaleY,
+            width: pointW * pixelScaleX,
+            height: pointH * pixelScaleY
         )
 
-        viewModel.cropPage(at: index, to: imageRect)
+        viewModel.cropPage(at: index, to: pixelRect)
         isCropping = false
         isDraggingCrop = false
     }
