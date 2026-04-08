@@ -4,7 +4,7 @@ import Vision
 struct OCRService {
     static func recognizeText(
         in image: NSImage,
-        languages: [String] = ["en"],
+        languages: [String] = ["en", "es"],
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
@@ -23,8 +23,24 @@ struct OCRService {
                 return
             }
 
-            let text = observations
-                .compactMap { $0.topCandidates(1).first?.string }
+            // Sort by position: top-to-bottom, then left-to-right.
+            // Vision uses normalized coords where Y=0 is bottom, Y=1 is top.
+            let sorted = observations.sorted { a, b in
+                let ay = 1.0 - a.boundingBox.midY
+                let by = 1.0 - b.boundingBox.midY
+                // Group into rows (within 2% of page height = same line)
+                if abs(ay - by) > 0.02 {
+                    return ay < by
+                }
+                return a.boundingBox.midX < b.boundingBox.midX
+            }
+
+            let text = sorted
+                .compactMap { obs -> String? in
+                    guard let candidate = obs.topCandidates(1).first,
+                          candidate.confidence > 0.3 else { return nil }
+                    return candidate.string
+                }
                 .joined(separator: "\n")
 
             completion(.success(text))
@@ -45,7 +61,7 @@ struct OCRService {
     }
 
     /// Async wrapper
-    static func recognizeText(in image: NSImage, languages: [String] = ["en"]) async throws -> String {
+    static func recognizeText(in image: NSImage, languages: [String] = ["en", "es"]) async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             recognizeText(in: image, languages: languages) { result in
                 continuation.resume(with: result)

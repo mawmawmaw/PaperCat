@@ -11,6 +11,9 @@ struct ScanPreviewView: View {
     @State private var cropEnd: CGPoint = .zero
     @State private var isDraggingCrop = false
 
+    // Annotation state
+    @State private var annotationMode: AnnotationMode = .none
+
     var body: some View {
         HSplitView {
             GeometryReader { geometry in
@@ -24,6 +27,7 @@ struct ScanPreviewView: View {
                     )
                     let displayWidth = imageSize.width * fitScale * zoomScale
                     let displayHeight = imageSize.height * fitScale * zoomScale
+                    let displaySize = CGSize(width: displayWidth, height: displayHeight)
 
                     ScrollView([.horizontal, .vertical]) {
                         ZStack(alignment: .topLeading) {
@@ -32,6 +36,24 @@ struct ScanPreviewView: View {
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: displayWidth, height: displayHeight)
 
+                            // Annotation overlay
+                            if let index = viewModel.selectedPageIndex {
+                                let binding = Binding(
+                                    get: { viewModel.document.pages[index].annotations },
+                                    set: {
+                                        viewModel.document.pages[index].annotations = $0
+                                        viewModel.document.objectWillChange.send()
+                                    }
+                                )
+                                AnnotationOverlay(
+                                    annotations: binding,
+                                    imageSize: imageSize,
+                                    displaySize: displaySize,
+                                    mode: annotationMode
+                                )
+                            }
+
+                            // Crop overlay
                             if isCropping && isDraggingCrop {
                                 cropOverlay
                             }
@@ -86,12 +108,35 @@ struct ScanPreviewView: View {
                     Toggle(isOn: $isCropping) {
                         Label("Crop", systemImage: "crop")
                     }
+
+                    Divider()
+
+                    Toggle(isOn: Binding(
+                        get: { annotationMode == .text },
+                        set: { annotationMode = $0 ? .text : .none }
+                    )) {
+                        Label("Add Note", systemImage: "note.text")
+                    }
+
+                    Toggle(isOn: Binding(
+                        get: { annotationMode == .draw },
+                        set: { annotationMode = $0 ? .draw : .none }
+                    )) {
+                        Label("Draw", systemImage: "pencil.tip")
+                    }
                 }
             }
         }
         .onChange(of: viewModel.selectedPageIndex) {
             isCropping = false
             isDraggingCrop = false
+            annotationMode = .none
+        }
+        .onChange(of: isCropping) {
+            if isCropping { annotationMode = .none }
+        }
+        .onChange(of: annotationMode) {
+            if annotationMode != .none { isCropping = false; isDraggingCrop = false }
         }
     }
 
@@ -163,13 +208,11 @@ struct ScanPreviewView: View {
         let displayRect = normalizedCropRect
         let displayScale = fitScale * zoomScale
 
-        // Convert display coords to NSImage point coords
         let pointX = displayRect.origin.x / displayScale
         let pointY = displayRect.origin.y / displayScale
         let pointW = displayRect.width / displayScale
         let pointH = displayRect.height / displayScale
 
-        // Convert NSImage points to CGImage pixels
         let pixelScaleX = CGFloat(cgImage.width) / imageSize.width
         let pixelScaleY = CGFloat(cgImage.height) / imageSize.height
 

@@ -15,6 +15,9 @@ struct ScannedPage: Identifiable {
     /// Sharpness adjustment (0.0 to 2.0)
     var sharpness: Double = 0.0
 
+    /// Annotations (text notes + drawings)
+    var annotations: [Annotation] = []
+
     init(image: NSImage) {
         self.originalImage = image
         self.adjustedImage = image

@@ -1,4 +1,5 @@
 import SwiftUI
+import SystemConfiguration
 
 struct ContentView: View {
     @EnvironmentObject var viewModel: ScannerViewModel
@@ -130,25 +131,40 @@ struct ContentView: View {
 
     // MARK: - Export
 
+    /// Get the real user's Documents folder (not root's) via the console session owner
+    private static var userDocuments: URL {
+        if getuid() == 0 {
+            var uid: uid_t = 0
+            if let name = SCDynamicStoreCopyConsoleUser(nil, &uid, nil) as String? {
+                return URL(fileURLWithPath: "/Users/\(name)/Documents")
+            }
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents")
+    }
+
     private func showExportPDFPanel() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
         panel.nameFieldStringValue = "\(viewModel.document.name).pdf"
-        panel.begin { response in
-            if response == .OK, let url = panel.url {
-                viewModel.exportPDF(to: url)
-            }
+        panel.directoryURL = Self.userDocuments
+        if panel.runModal() == .OK, let url = panel.url {
+            viewModel.exportPDF(to: url)
         }
     }
 
     private func showExportPagePanel() {
         let panel = NSSavePanel()
         let format = viewModel.settings.exportFormat
+        switch format {
+        case .pdf: panel.allowedContentTypes = [.pdf]
+        case .png: panel.allowedContentTypes = [.png]
+        case .jpeg: panel.allowedContentTypes = [.jpeg]
+        case .tiff: panel.allowedContentTypes = [.tiff]
+        }
         panel.nameFieldStringValue = "scan.\(format.fileExtension)"
-        panel.begin { response in
-            if response == .OK, let url = panel.url {
-                viewModel.exportCurrentPage(format: format, to: url)
-            }
+        panel.directoryURL = Self.userDocuments
+        if panel.runModal() == .OK, let url = panel.url {
+            viewModel.exportCurrentPage(format: format, to: url)
         }
     }
 }

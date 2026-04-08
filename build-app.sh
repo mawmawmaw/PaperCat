@@ -56,7 +56,21 @@ cp "$SCRIPT_DIR/Info.plist" "$APP_BUNDLE/Contents/"
 # Copy icon
 cp "$SCRIPT_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/"
 
+# Bundle libusb so the app works without Homebrew
+echo "Bundling libusb..."
+mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+LIBUSB_SRC=$(readlink -f /opt/homebrew/lib/libusb-1.0.0.dylib)
+cp "$LIBUSB_SRC" "$APP_BUNDLE/Contents/Frameworks/libusb-1.0.0.dylib"
+# Fix the binary to look for libusb in Frameworks/ instead of /opt/homebrew
+install_name_tool -change /opt/homebrew/opt/libusb/lib/libusb-1.0.0.dylib \
+    @executable_path/../Frameworks/libusb-1.0.0.dylib \
+    "$APP_BUNDLE/Contents/MacOS/$APP_NAME-bin"
+# Fix the dylib's own install name
+install_name_tool -id @executable_path/../Frameworks/libusb-1.0.0.dylib \
+    "$APP_BUNDLE/Contents/Frameworks/libusb-1.0.0.dylib"
+
 # Sign with entitlements (ad-hoc)
+codesign --force --sign - "$APP_BUNDLE/Contents/Frameworks/libusb-1.0.0.dylib"
 codesign --force --sign - --entitlements "$SCRIPT_DIR/Entitlements.plist" "$APP_BUNDLE"
 
 echo ""

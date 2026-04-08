@@ -3,12 +3,15 @@ import PDFKit
 
 struct PDFBuilder {
 
-    /// Create a PDF document from multiple scanned pages
+    /// Create a PDF document from multiple scanned pages, with annotations baked in
     static func buildPDF(from pages: [ScannedPage]) -> PDFDocument {
         let document = PDFDocument()
 
         for (index, page) in pages.enumerated() {
-            if let pdfPage = createPDFPage(from: page.adjustedImage) {
+            let image = page.annotations.isEmpty
+                ? page.adjustedImage
+                : renderAnnotations(onto: page.adjustedImage, annotations: page.annotations)
+            if let pdfPage = createPDFPage(from: image) {
                 document.insert(pdfPage, at: index)
             }
         }
@@ -68,6 +71,47 @@ struct PDFBuilder {
 
     private static func createPDFPage(from image: NSImage) -> PDFPage? {
         PDFPage(image: image)
+    }
+
+    /// Render annotations onto an image, returning a new image with annotations baked in.
+    static func renderAnnotations(onto image: NSImage, annotations: [Annotation]) -> NSImage {
+        let size = image.size
+        let result = NSImage(size: size)
+        result.lockFocus()
+
+        // Draw original image
+        image.draw(in: NSRect(origin: .zero, size: size))
+
+        // Draw annotations
+        for annotation in annotations {
+            switch annotation {
+            case .text(let t):
+                let x = t.position.x * size.width
+                let y = t.position.y * size.height
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: t.fontSize * (size.width / 800)), // scale font to image
+                    .foregroundColor: t.color,
+                    .backgroundColor: NSColor.white.withAlphaComponent(0.8),
+                ]
+                let str = NSAttributedString(string: t.text, attributes: attrs)
+                str.draw(at: NSPoint(x: x, y: size.height - y - str.size().height))
+
+            case .drawing(let d):
+                let path = NSBezierPath()
+                let points = d.points.map { NSPoint(x: $0.x * size.width, y: size.height - $0.y * size.height) }
+                guard let first = points.first else { continue }
+                path.move(to: first)
+                for point in points.dropFirst() {
+                    path.line(to: point)
+                }
+                path.lineWidth = d.lineWidth * (size.width / 800)
+                d.color.setStroke()
+                path.stroke()
+            }
+        }
+
+        result.unlockFocus()
+        return result
     }
 }
 

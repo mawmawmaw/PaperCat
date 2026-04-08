@@ -169,8 +169,11 @@ class ScannerViewModel: ObservableObject {
 
     func exportCurrentPage(format: ExportFormat, to url: URL) {
         guard let page = selectedPage else { return }
+        let image = page.annotations.isEmpty
+            ? page.adjustedImage
+            : PDFBuilder.renderAnnotations(onto: page.adjustedImage, annotations: page.annotations)
         do {
-            try PDFBuilder.saveImage(page.adjustedImage, format: format, to: url)
+            try PDFBuilder.saveImage(image, format: format, to: url)
         } catch {
             scannerManager.errorMessage = "Export failed: \(error.localizedDescription)"
         }
