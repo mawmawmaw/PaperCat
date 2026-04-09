@@ -5,18 +5,20 @@ struct PageSidebarView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            List(selection: $viewModel.selectedPageIndex) {
+            List(selection: $viewModel.selectedPageIndices) {
                 ForEach(Array(viewModel.document.pages.enumerated()), id: \.element.id) { index, page in
                     PageThumbnailRow(page: page, index: index)
                         .tag(index)
                         .contextMenu {
                             Button("Run OCR") { viewModel.runOCR(on: index) }
                             Divider()
+                            Button("Move Up") { viewModel.movePageUp(at: index) }
+                                .disabled(index == 0)
+                            Button("Move Down") { viewModel.movePageDown(at: index) }
+                                .disabled(index == viewModel.document.pages.count - 1)
+                            Divider()
                             Button("Delete", role: .destructive) { viewModel.deletePage(at: index) }
                         }
-                }
-                .onMove { source, destination in
-                    viewModel.movePages(from: source, to: destination)
                 }
             }
             .listStyle(.sidebar)
@@ -27,6 +29,11 @@ struct PageSidebarView: View {
                 Text("\(viewModel.document.pages.count) page(s)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if viewModel.selectedPageIndices.count > 1 {
+                    Text("(\(viewModel.selectedPageIndices.count) selected)")
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                }
                 Spacer()
                 Button(action: { viewModel.scan() }) {
                     Image(systemName: "plus")

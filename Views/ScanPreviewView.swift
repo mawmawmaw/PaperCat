@@ -49,7 +49,10 @@ struct ScanPreviewView: View {
                                     annotations: binding,
                                     imageSize: imageSize,
                                     displaySize: displaySize,
-                                    mode: annotationMode
+                                    mode: annotationMode,
+                                    onDiscreteChange: { old, new in
+                                        viewModel.registerAnnotationUndo(at: index, old: old)
+                                    }
                                 )
                             }
 
@@ -127,7 +130,7 @@ struct ScanPreviewView: View {
                 }
             }
         }
-        .onChange(of: viewModel.selectedPageIndex) {
+        .onChange(of: viewModel.selectedPageIndices) {
             isCropping = false
             isDraggingCrop = false
             annotationMode = .none

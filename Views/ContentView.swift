@@ -33,14 +33,19 @@ struct ContentView: View {
 
                 Menu {
                     Button("Export All as PDF...") { showExportPDFPanel() }
+
+                    if viewModel.selectedPageIndices.count > 1 {
+                        Button("Export Selected as PDF... (\(viewModel.selectedPageIndices.count) pages)") {
+                            showExportSelectedPanel()
+                        }
+                    }
+
                     Button("Export Current Page...") { showExportPagePanel() }
                         .disabled(viewModel.selectedPage == nil)
                 } label: {
                     Label("Export", systemImage: "square.and.arrow.up")
                 }
                 .disabled(viewModel.document.pages.isEmpty)
-
-                // settingsMenu — disabled until dynamic scan parameters are tested
             }
         }
         .sheet(isPresented: $viewModel.showExportPanel) {
@@ -105,41 +110,21 @@ struct ContentView: View {
         return .yellow
     }
 
-    private var settingsMenu: some View {
-        Menu {
-            Picker("Resolution", selection: $viewModel.settings.resolution) {
-                ForEach(ScanResolution.allCases) { res in
-                    Text(res.label).tag(res)
-                }
-            }
-
-            Picker("Color Mode", selection: $viewModel.settings.colorMode) {
-                ForEach(ScanColorMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-
-            Picker("Paper Size", selection: $viewModel.settings.paperSize) {
-                ForEach(PaperSize.allCases) { size in
-                    Text(size.rawValue).tag(size)
-                }
-            }
-        } label: {
-            Label("Settings", systemImage: "gear")
-        }
-    }
-
     // MARK: - Export
 
-    /// Get the real user's Documents folder (not root's) via the console session owner
-    private static var userDocuments: URL {
+    /// Get the real user's home folder (not root's) via the console session owner
+    static var userHome: URL {
         if getuid() == 0 {
             var uid: uid_t = 0
             if let name = SCDynamicStoreCopyConsoleUser(nil, &uid, nil) as String? {
-                return URL(fileURLWithPath: "/Users/\(name)/Documents")
+                return URL(fileURLWithPath: "/Users/\(name)")
             }
         }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents")
+        return FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    private static var userDocuments: URL {
+        userHome.appendingPathComponent("Documents")
     }
 
     private func showExportPDFPanel() {
@@ -149,6 +134,16 @@ struct ContentView: View {
         panel.directoryURL = Self.userDocuments
         if panel.runModal() == .OK, let url = panel.url {
             viewModel.exportPDF(to: url)
+        }
+    }
+
+    private func showExportSelectedPanel() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = "\(viewModel.document.name)_selected.pdf"
+        panel.directoryURL = Self.userDocuments
+        if panel.runModal() == .OK, let url = panel.url {
+            viewModel.exportSelectedPDF(to: url)
         }
     }
 

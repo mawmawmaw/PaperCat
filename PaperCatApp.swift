@@ -12,8 +12,6 @@ struct PaperCatApp: App {
     @StateObject private var viewModel = ScannerViewModel()
 
     init() {
-        // When launched via the privilege-escalation launcher, monitor the launcher
-        // process so that Force Quit also terminates this root process.
         if let pidStr = ProcessInfo.processInfo.environment["PAPERCAT_LAUNCHER_PID"],
            let launcherPID = Int32(pidStr) {
             DispatchQueue.global(qos: .utility).async {
@@ -41,7 +39,23 @@ struct PaperCatApp: App {
                 }
         }
         .commands {
-            CommandGroup(after: .newItem) {
+            // Undo/Redo — don't use .disabled since UndoManager state isn't observable
+            CommandGroup(replacing: .undoRedo) {
+                Button("Undo") {
+                    viewModel.undoManager.undo()
+                    viewModel.objectWillChange.send()
+                }
+                .keyboardShortcut("z", modifiers: .command)
+
+                Button("Redo") {
+                    viewModel.undoManager.redo()
+                    viewModel.objectWillChange.send()
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+            }
+
+            // Disable "New Window", add scan/export shortcuts
+            CommandGroup(replacing: .newItem) {
                 Button("Scan Page") {
                     viewModel.scan()
                 }
@@ -52,7 +66,7 @@ struct PaperCatApp: App {
                 Button("Export as PDF...") {
                     viewModel.showExportPanel = true
                 }
-                .keyboardShortcut("e", modifiers: [.command])
+                .keyboardShortcut("e", modifiers: .command)
             }
 
             CommandGroup(replacing: .printItem) {
@@ -60,6 +74,23 @@ struct PaperCatApp: App {
                     viewModel.printDocument()
                 }
                 .keyboardShortcut("p", modifiers: .command)
+            }
+
+            // Edit menu additions
+            CommandGroup(after: .pasteboard) {
+                Divider()
+
+                Button("Select All Pages") {
+                    viewModel.selectAll()
+                }
+                .keyboardShortcut("a", modifiers: .command)
+                .disabled(viewModel.document.pages.isEmpty)
+
+                Button("Delete Selected") {
+                    viewModel.deleteSelectedPages()
+                }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(viewModel.selectedPageIndices.isEmpty)
             }
         }
     }

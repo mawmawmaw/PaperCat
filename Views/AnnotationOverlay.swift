@@ -6,11 +6,14 @@ enum AnnotationMode {
     case draw
 }
 
+private let presetColors: [Color] = [.red, .blue, .green, .orange, .purple, .black, .white, .yellow]
+
 struct AnnotationOverlay: View {
     @Binding var annotations: [Annotation]
     let imageSize: CGSize
     let displaySize: CGSize
     let mode: AnnotationMode
+    var onDiscreteChange: (([Annotation], [Annotation]) -> Void)?
 
     // Shared settings
     @State private var selectedColor: Color = .red
@@ -21,10 +24,11 @@ struct AnnotationOverlay: View {
     @State private var editingTextID: UUID?
     @State private var editingText: String = ""
     @State private var currentStroke: [CGPoint] = []
+    @State private var snapshotBeforeEdit: [Annotation] = []
+    @FocusState private var isTextFieldFocused: Bool
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Existing annotations
             ForEach(annotations) { annotation in
                 switch annotation {
                 case .text(let t):
@@ -34,7 +38,6 @@ struct AnnotationOverlay: View {
                 }
             }
 
-            // Current drawing stroke
             if mode == .draw && !currentStroke.isEmpty {
                 Path { path in
                     let points = currentStroke.map { denormalize($0) }
@@ -48,7 +51,7 @@ struct AnnotationOverlay: View {
             }
         }
         .frame(width: displaySize.width, height: displaySize.height)
-        .clipped() // Prevent drawing outside document bounds
+        .clipped()
         .contentShape(Rectangle())
         .gesture(mode == .draw ? drawGesture : nil)
         .onTapGesture { location in
@@ -69,34 +72,51 @@ struct AnnotationOverlay: View {
     // MARK: - Settings Bar
 
     private var toolSettingsBar: some View {
-        HStack(spacing: 10) {
-            ColorPicker("", selection: $selectedColor)
-                .labelsHidden()
-                .frame(width: 28)
-
-            if mode == .text {
-                Picker("Size", selection: $fontSize) {
-                    Text("S").tag(CGFloat(12))
-                    Text("M").tag(CGFloat(16))
-                    Text("L").tag(CGFloat(22))
-                    Text("XL").tag(CGFloat(30))
+        VStack(spacing: 6) {
+            // Color swatches
+            HStack(spacing: 4) {
+                ForEach(presetColors, id: \.self) { color in
+                    Circle()
+                        .fill(color)
+                        .frame(width: 20, height: 20)
+                        .overlay(
+                            Circle()
+                                .stroke(selectedColor == color ? Color.primary : Color.clear, lineWidth: 2)
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 0.5)
+                        )
+                        .onTapGesture { selectedColor = color }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 160)
             }
 
-            if mode == .draw {
-                HStack(spacing: 6) {
-                    ForEach([(CGFloat(2), "Thin"), (CGFloat(4), "Med"), (CGFloat(7), "Thick")], id: \.0) { width, label in
-                        Button(action: { strokeWidth = width }) {
-                            Text(label)
-                                .font(.caption)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(strokeWidth == width ? selectedColor.opacity(0.2) : Color.clear)
-                                .cornerRadius(4)
+            // Size/width controls
+            HStack(spacing: 10) {
+                if mode == .text {
+                    Picker("Size", selection: $fontSize) {
+                        Text("S").tag(CGFloat(12))
+                        Text("M").tag(CGFloat(16))
+                        Text("L").tag(CGFloat(22))
+                        Text("XL").tag(CGFloat(30))
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 160)
+                }
+
+                if mode == .draw {
+                    HStack(spacing: 6) {
+                        ForEach([(CGFloat(2), "Thin"), (CGFloat(4), "Med"), (CGFloat(7), "Thick")], id: \.0) { width, label in
+                            Button(action: { strokeWidth = width }) {
+                                Text(label)
+                                    .font(.caption)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(strokeWidth == width ? selectedColor.opacity(0.2) : Color.clear)
+                                    .cornerRadius(4)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -118,6 +138,7 @@ struct AnnotationOverlay: View {
                         .foregroundStyle(selectedColor)
                         .frame(minWidth: 80, maxWidth: 250)
                         .fixedSize()
+                        .focused($isTextFieldFocused)
                         .onSubmit { commitCurrentEdit() }
 
                     Button(action: { commitCurrentEdit() }) {
@@ -165,16 +186,19 @@ struct AnnotationOverlay: View {
                 .fixedSize()
                 .position(x: pos.x, y: pos.y)
                 .onTapGesture {
+                    snapshotBeforeEdit = annotations
                     editingTextID = t.id
                     editingText = t.text
                     fontSize = t.fontSize
                     selectedColor = Color(nsColor: t.color)
+                    isTextFieldFocused = true
                 }
             }
         }
     }
 
     private func addTextAnnotation(at displayPoint: CGPoint) {
+        snapshotBeforeEdit = annotations
         let normalized = normalize(displayPoint)
         let newText = TextAnnotation(
             text: "",
@@ -185,6 +209,10 @@ struct AnnotationOverlay: View {
         annotations.append(.text(newText))
         editingTextID = newText.id
         editingText = ""
+        // Auto-focus after a tick so the view is rendered
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            isTextFieldFocused = true
+        }
     }
 
     private func commitCurrentEdit() {
@@ -200,8 +228,10 @@ struct AnnotationOverlay: View {
                 annotations[idx] = .text(t)
             }
         }
+        onDiscreteChange?(snapshotBeforeEdit, annotations)
         editingTextID = nil
         editingText = ""
+        isTextFieldFocused = false
     }
 
     private func cancelEdit(id: UUID) {
@@ -212,10 +242,13 @@ struct AnnotationOverlay: View {
         }
         editingTextID = nil
         editingText = ""
+        isTextFieldFocused = false
     }
 
     private func deleteAnnotation(id: UUID) {
+        let old = annotations
         annotations.removeAll { $0.id == id }
+        onDiscreteChange?(old, annotations)
     }
 
     // MARK: - Drawing
@@ -248,13 +281,13 @@ struct AnnotationOverlay: View {
     private var drawGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
-                // Clamp to document bounds
                 let clamped = CGPoint(
                     x: max(0, min(value.location.x, displaySize.width)),
                     y: max(0, min(value.location.y, displaySize.height))
                 )
                 let normalized = normalize(clamped)
                 if currentStroke.isEmpty {
+                    snapshotBeforeEdit = annotations
                     let start = CGPoint(
                         x: max(0, min(value.startLocation.x, displaySize.width)),
                         y: max(0, min(value.startLocation.y, displaySize.height))
@@ -271,6 +304,7 @@ struct AnnotationOverlay: View {
                         color: NSColor(selectedColor)
                     )
                     annotations.append(.drawing(drawing))
+                    onDiscreteChange?(snapshotBeforeEdit, annotations)
                 }
                 currentStroke = []
             }
